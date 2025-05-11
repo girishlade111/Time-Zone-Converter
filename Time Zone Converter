@@ -1,0 +1,243 @@
+import { useState, useEffect } from 'react'
+import { Button } from "/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "/components/ui/card"
+import { Input } from "/components/ui/input"
+import { Clock, Plus, Trash } from "lucide-react"
+
+interface TimeZone {
+  id: string
+  name: string
+  offset: number
+  dstOffset?: number
+  dstStart?: string
+  dstEnd?: string
+}
+
+interface FavoriteCity {
+  id: string
+  name: string
+  timeZoneId: string
+}
+
+const commonTimeZones: TimeZone[] = [
+  { id: 'utc', name: 'UTC', offset: 0 },
+  { id: 'new-york', name: 'New York', offset: -5, dstOffset: -4, dstStart: 'March 10', dstEnd: 'November 3' },
+  { id: 'london', name: 'London', offset: 0, dstOffset: 1, dstStart: 'March 31', dstEnd: 'October 27' },
+  { id: 'tokyo', name: 'Tokyo', offset: 9 },
+  { id: 'sydney', name: 'Sydney', offset: 10, dstOffset: 11, dstStart: 'October 6', dstEnd: 'April 7' },
+  { id: 'los-angeles', name: 'Los Angeles', offset: -8, dstOffset: -7, dstStart: 'March 10', dstEnd: 'November 3' },
+  { id: 'india', name: 'India', offset: 5.5 }, // India Standard Time (IST)
+  { id: 'france', name: 'France', offset: 1, dstOffset: 2, dstStart: 'March 31', dstEnd: 'October 27' }, // Central European Time (CET/CEST)
+  { id: 'israel', name: 'Israel', offset: 2, dstOffset: 3, dstStart: 'March 29', dstEnd: 'October 27' }, // Israel Standard Time (IST/IDT)
+]
+
+const defaultWidgetTimeZones = [
+  'new-york', 
+  'london', 
+  'tokyo',
+  'india',
+  'france',
+  'israel'
+]
+
+export default function TimeZoneConverter() {
+  const [currentTime, setCurrentTime] = useState<Date>(new Date())
+  const [favoriteCities, setFavoriteCities] = useState<FavoriteCity[]>([])
+  const [newCityName, setNewCityName] = useState('')
+  const [selectedTimeZone, setSelectedTimeZone] = useState('new-york')
+  const [showAddForm, setShowAddForm] = useState(false)
+
+  // Load saved cities from localStorage on initial render
+  useEffect(() => {
+    const savedCities = localStorage.getItem('favoriteCities')
+    if (savedCities) {
+      setFavoriteCities(JSON.parse(savedCities))
+    }
+  }, [])
+
+  // Update current time every minute
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 60000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Save to localStorage whenever favoriteCities changes
+  useEffect(() => {
+    localStorage.setItem('favoriteCities', JSON.stringify(favoriteCities))
+  }, [favoriteCities])
+
+  const addFavoriteCity = () => {
+    if (!newCityName.trim() || !selectedTimeZone) return
+
+    const newCity: FavoriteCity = {
+      id: Date.now().toString(),
+      name: newCityName.trim(),
+      timeZoneId: selectedTimeZone
+    }
+
+    setFavoriteCities([...favoriteCities, newCity])
+    setNewCityName('')
+    setShowAddForm(false)
+  }
+
+  const removeFavoriteCity = (id: string) => {
+    setFavoriteCities(favoriteCities.filter(city => city.id !== id))
+  }
+
+  const getTimeForZone = (timeZoneId: string) => {
+    const timeZone = commonTimeZones.find(tz => tz.id === timeZoneId)
+    if (!timeZone) return currentTime
+
+    // Check if daylight saving time is active
+    const now = currentTime
+    const isDST = timeZone.dstOffset && timeZone.dstStart && timeZone.dstEnd && 
+      isDateInRange(now, timeZone.dstStart, timeZone.dstEnd)
+    
+    const offset = isDST ? timeZone.dstOffset! : timeZone.offset
+    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000)
+    return new Date(utcTime + (3600000 * offset))
+  }
+
+  const isDateInRange = (date: Date, startDateStr: string, endDateStr: string) => {
+    const currentYear = date.getFullYear()
+    const startDate = new Date(`${startDateStr}, ${currentYear}`)
+    const endDate = new Date(`${endDateStr}, ${currentYear}`)
+    return date >= startDate && date <= endDate
+  }
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+
+  const TimeZoneCard = ({ timeZoneId, customName }: { timeZoneId: string, customName?: string }) => {
+    const timeZone = commonTimeZones.find(tz => tz.id === timeZoneId)
+    if (!timeZone) return null
+
+    const time = getTimeForZone(timeZoneId)
+    const isDST = timeZone.dstOffset && timeZone.dstStart && timeZone.dstEnd && 
+      isDateInRange(currentTime, timeZone.dstStart, timeZone.dstEnd)
+
+    return (
+      <Card className="h-full">
+        <CardHeader className="pb-2">
+          <CardTitle>{customName || timeZone.name}</CardTitle>
+          <CardDescription>
+            {timeZone.name} (UTC{timeZone.offset >= 0 ? '+' : ''}{timeZone.offset}
+            {timeZone.offset % 1 !== 0 && '.5'})
+            {isDST && <span className="text-xs ml-1">(DST)</span>}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-3xl font-bold">
+            {formatTime(time)}
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {time.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto p-4 space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="w-6 h-6" />
+            World Clock
+          </CardTitle>
+          <CardDescription>
+            Current times around the world
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Default Time Zone Widget */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Popular Time Zones</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {defaultWidgetTimeZones.map((tzId) => (
+                <TimeZoneCard key={tzId} timeZoneId={tzId} />
+              ))}
+            </div>
+          </div>
+
+          {/* Favorite Cities Section */}
+          <div>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-lg font-semibold">Your Favorite Cities</h3>
+              <Button 
+                size="sm" 
+                variant="outline"
+                onClick={() => setShowAddForm(!showAddForm)}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add City
+              </Button>
+            </div>
+
+            {/* Add City Form */}
+            {showAddForm && (
+              <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                <Input
+                  placeholder="City name (e.g., Mumbai)"
+                  value={newCityName}
+                  onChange={(e) => setNewCityName(e.target.value)}
+                  className="flex-1"
+                />
+                <select
+                  value={selectedTimeZone}
+                  onChange={(e) => setSelectedTimeZone(e.target.value)}
+                  className="border rounded-md px-3 py-2 text-sm"
+                >
+                  {commonTimeZones.map((tz) => (
+                    <option key={tz.id} value={tz.id}>
+                      {tz.name} (UTC{tz.offset >= 0 ? '+' : ''}{tz.offset}
+                      {tz.offset % 1 !== 0 && '.5'})
+                    </option>
+                  ))}
+                </select>
+                <Button onClick={addFavoriteCity}>Add</Button>
+              </div>
+            )}
+
+            {/* Favorite Cities Grid */}
+            {favoriteCities.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {favoriteCities.map((city) => (
+                  <div key={city.id} className="relative group">
+                    <TimeZoneCard 
+                      timeZoneId={city.timeZoneId} 
+                      customName={city.name} 
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => removeFavoriteCity(city.id)}
+                    >
+                      <Trash className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No favorite cities added yet.</p>
+                <Button 
+                  variant="link" 
+                  className="mt-2"
+                  onClick={() => setShowAddForm(true)}
+                >
+                  Add your first city
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
